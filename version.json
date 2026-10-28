@@ -1,7 +1,12 @@
 {
   "version": "1.0.0",
-  "updatedAt": "2026-10-28T17:30:00Z",
+  "updatedAt": "2026-10-28T21:35:00Z",
   "description": "Alpha Team Sender Pro Client & Tools",
+  "installer": {
+    "version": "1.0.0",
+    "fileName": "SenderPro-SmartInstaller.exe",
+    "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/SenderPro-SmartInstaller.exe"
+  },
   "launcher": {
     "version": "1.0.0",
     "fileName": "AlphaLauncher.exe",
