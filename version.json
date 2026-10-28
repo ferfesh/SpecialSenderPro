@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-10-28T17:30:00Z",
+  "description": "Alpha Team Sender Pro Client & Tools",
+  "launcher": {
+    "version": "1.0.0",
+    "fileName": "AlphaLauncher.exe",
+    "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/AlphaLauncher.exe"
+  },
+  "updater": {
+    "version": "1.0.0",
+    "fileName": "AlphaUpdater.exe",
+    "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/AlphaUpdater.exe"
+  },
+  "cert": {
+    "version": "1.0.0",
+    "fileName": "server.cert",
+    "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/server.cert"
+  },
+  "conf": {
+    "version": "1.0.0",
+    "fileName": "server.conf",
+    "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/server.conf"
+  }
+}
