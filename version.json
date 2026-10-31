@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "updatedAt": "2026-10-31T21:50:00Z",
-  "description": "Alpha Team Sender Pro Client & Tools Manifest",
+  "version": "65.35.0",
+  "updatedAt": "2026-10-31T22:08:50Z",
+  "description": "Alpha Team Sender Pro Client & Tools Manifest - Synced with Official Vendor",
   "installer": {
     "version": "1.0.0",
     "fileName": "SenderPro-SmartInstaller.exe",
@@ -27,30 +27,37 @@
     "fileName": "server.conf",
     "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/server.conf"
   },
+  "officialFeed": {
+    "url": "https://launcher.senderprov.com/Updater/Updater.txt",
+    "checkedAt": "2026-10-31T22:08:50Z"
+  },
   "tools": {
     "marketing": {
       "name": "Sender Pro Marketing",
-      "version": "4.16.0",
-      "fileName": "SenderPro_Marketing.zip",
+      "version": "65.35.0.0",
+      "fileName": "65m35.zip",
       "folderName": "Sender Pro Marketing",
       "exeName": "Sender Pro.exe",
-      "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/SenderPro_Marketing.zip"
+      "officialDownloadUrl": "https://launcher.senderprov.com/Updater/Files/marketing/65m35.zip",
+      "downloadUrl": "https://launcher.senderprov.com/Updater/Files/marketing/65m35.zip"
     },
     "data": {
       "name": "Sender Pro Data",
-      "version": "4.16.0",
-      "fileName": "SenderPro_Data.zip",
+      "version": "65.33.0.0",
+      "fileName": "65d34.zip",
       "folderName": "Sender Pro Data",
       "exeName": "Sender Pro.exe",
-      "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/SenderPro_Data.zip"
+      "officialDownloadUrl": "https://launcher.senderprov.com/Updater/Files/c2c/65d34.zip",
+      "downloadUrl": "https://launcher.senderprov.com/Updater/Files/c2c/65d34.zip"
     },
     "dataAnalysis": {
       "name": "Sender Pro Data Analysis",
-      "version": "4.16.0",
-      "fileName": "SenderPro_DataAnalysis.zip",
+      "version": "2.0.0.0",
+      "fileName": "2.zip",
       "folderName": "Sender Pro DataAnalysis",
       "exeName": "Sender Pro Data Analysis.exe",
-      "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/SenderPro_DataAnalysis.zip"
+      "officialDownloadUrl": "https://launcher.senderprov.com/Updater/Files/data_analysis/2.zip",
+      "downloadUrl": "https://launcher.senderprov.com/Updater/Files/data_analysis/2.zip"
     }
   }
 }

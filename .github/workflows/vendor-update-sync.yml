@@ -28,18 +28,18 @@ jobs:
           const https = require('https');
           const fs = require('fs');
 
-          console.log('=== Checking Sender Pro Official Server ===');
-          const vendorUrl = 'https://launcher.senderprov.com/server.ini';
+          console.log('=== Checking Sender Pro Official Update Feed ===');
+          // Captured directly from official launcher memory
+          const vendorUrl = 'https://launcher.senderprov.com/Updater/Updater.txt';
 
-          const req = https.get(vendorUrl, { timeout: 10000, rejectUnauthorized: false }, (res) => {
+          const req = https.get(vendorUrl, { timeout: 15000, rejectUnauthorized: false }, (res) => {
             console.log('Vendor response code:', res.statusCode);
             let body = '';
             res.on('data', chunk => body += chunk);
             res.on('end', () => {
               if (res.statusCode === 200 && body.includes('[Marketing]')) {
-                console.log('Vendor server is active! Parsing server.ini...');
-                // Parse INI lines
-                const lines = body.split('\n');
+                console.log('Official vendor feed reachable! Parsing sections...');
+                const lines = body.split(/\r?\n/);
                 let currentSection = '';
                 const updates = {};
                 for (let raw of lines) {
@@ -48,26 +48,54 @@ jobs:
                     currentSection = line.slice(1, -1).toLowerCase();
                     updates[currentSection] = {};
                   } else if (line.includes('=')) {
-                    const [k, v] = line.split('=');
+                    const idx = line.indexOf('=');
+                    const k = line.slice(0, idx).trim().toLowerCase();
+                    const v = line.slice(idx + 1).trim();
                     if (currentSection && updates[currentSection]) {
-                      updates[currentSection][k.trim()] = v.trim();
+                      updates[currentSection][k] = v;
                     }
                   }
                 }
-                console.log('Parsed updates:', updates);
+                console.log('Parsed official updates feed:', updates);
 
-                // Update version.json if present
+                // Update version.json
                 if (fs.existsSync('version.json')) {
                   const manifest = JSON.parse(fs.readFileSync('version.json', 'utf8'));
                   manifest.updatedAt = new Date().toISOString();
-                  if (updates.marketing && updates.marketing.V) manifest.tools.marketing.version = updates.marketing.V;
-                  if (updates.data && updates.data.V) manifest.tools.data.version = updates.data.V;
-                  if (updates.dataanalysis && updates.dataanalysis.V) manifest.tools.dataAnalysis.version = updates.dataanalysis.V;
+                  manifest.officialFeed = {
+                    url: vendorUrl,
+                    checkedAt: new Date().toISOString()
+                  };
+
+                  if (updates.marketing && updates.marketing.version) {
+                    manifest.tools.marketing.version = updates.marketing.version;
+                    if (updates.marketing.link) {
+                      manifest.tools.marketing.officialDownloadUrl = updates.marketing.link;
+                      manifest.tools.marketing.downloadUrl = updates.marketing.link;
+                    }
+                  }
+
+                  if (updates.data && updates.data.version) {
+                    manifest.tools.data.version = updates.data.version;
+                    if (updates.data.link) {
+                      manifest.tools.data.officialDownloadUrl = updates.data.link;
+                      manifest.tools.data.downloadUrl = updates.data.link;
+                    }
+                  }
+
+                  if (updates.dataanalysis && updates.dataanalysis.version) {
+                    manifest.tools.dataAnalysis.version = updates.dataanalysis.version;
+                    if (updates.dataanalysis.link) {
+                      manifest.tools.dataAnalysis.officialDownloadUrl = updates.dataanalysis.link;
+                      manifest.tools.dataAnalysis.downloadUrl = updates.dataanalysis.link;
+                    }
+                  }
+
                   fs.writeFileSync('version.json', JSON.stringify(manifest, null, 2), 'utf8');
-                  console.log('Updated version.json successfully.');
+                  console.log('Updated version.json with live vendor links successfully.');
                 }
               } else {
-                console.log('Vendor updater returned status: ' + res.statusCode + ' (Not 200 or not INI). Fallback to current manifest.');
+                console.log('Vendor updater returned status: ' + res.statusCode + '. Keeping current manifest.');
               }
             });
           });
@@ -83,7 +111,7 @@ jobs:
           git config --global user.email "bot@alpha-team.online"
           if [[ -n $(git status --porcelain version.json) ]]; then
             git add version.json
-            git commit -m "chore(sync): auto-sync vendor update manifest [skip ci]"
+            git commit -m "chore(sync): auto-sync vendor update manifest from Updater.txt [skip ci]"
             git push
             echo "Manifest updated and pushed to repo."
           else
