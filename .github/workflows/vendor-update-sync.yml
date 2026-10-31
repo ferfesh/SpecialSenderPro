@@ -1,0 +1,91 @@
+name: Sender Pro Vendor & Cloud Update Sync
+
+on:
+  schedule:
+    # Runs daily at 02:00 AM UTC (100% cloud-hosted, independent of owner PC)
+    - cron: '0 2 */1 * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI anytime
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Check Official Vendor & Update Manifest
+        id: sync
+        run: |
+          node -e "
+          const https = require('https');
+          const fs = require('fs');
+
+          console.log('=== Checking Sender Pro Official Server ===');
+          const vendorUrl = 'https://launcher.senderprov.com/server.ini';
+
+          const req = https.get(vendorUrl, { timeout: 10000, rejectUnauthorized: false }, (res) => {
+            console.log('Vendor response code:', res.statusCode);
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+              if (res.statusCode === 200 && body.includes('[Marketing]')) {
+                console.log('Vendor server is active! Parsing server.ini...');
+                // Parse INI lines
+                const lines = body.split('\n');
+                let currentSection = '';
+                const updates = {};
+                for (let raw of lines) {
+                  const line = raw.trim();
+                  if (line.startsWith('[') && line.endsWith(']')) {
+                    currentSection = line.slice(1, -1).toLowerCase();
+                    updates[currentSection] = {};
+                  } else if (line.includes('=')) {
+                    const [k, v] = line.split('=');
+                    if (currentSection && updates[currentSection]) {
+                      updates[currentSection][k.trim()] = v.trim();
+                    }
+                  }
+                }
+                console.log('Parsed updates:', updates);
+
+                // Update version.json if present
+                if (fs.existsSync('version.json')) {
+                  const manifest = JSON.parse(fs.readFileSync('version.json', 'utf8'));
+                  manifest.updatedAt = new Date().toISOString();
+                  if (updates.marketing && updates.marketing.V) manifest.tools.marketing.version = updates.marketing.V;
+                  if (updates.data && updates.data.V) manifest.tools.data.version = updates.data.V;
+                  if (updates.dataanalysis && updates.dataanalysis.V) manifest.tools.dataAnalysis.version = updates.dataanalysis.V;
+                  fs.writeFileSync('version.json', JSON.stringify(manifest, null, 2), 'utf8');
+                  console.log('Updated version.json successfully.');
+                }
+              } else {
+                console.log('Vendor updater returned status: ' + res.statusCode + ' (Not 200 or not INI). Fallback to current manifest.');
+              }
+            });
+          });
+
+          req.on('error', (err) => {
+            console.log('Vendor check request warning:', err.message);
+          });
+          "
+
+      - name: Commit and Push If Updated
+        run: |
+          git config --global user.name "AlphaTeam-CloudBot"
+          git config --global user.email "bot@alpha-team.online"
+          if [[ -n $(git status --porcelain version.json) ]]; then
+            git add version.json
+            git commit -m "chore(sync): auto-sync vendor update manifest [skip ci]"
+            git push
+            echo "Manifest updated and pushed to repo."
+          else
+            echo "No manifest changes detected."
+          fi
