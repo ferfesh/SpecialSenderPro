@@ -176,6 +176,29 @@ namespace AlphaTeamUpdater
                 catch { }
             }
 
+            // Fallback to official vendor direct feed
+            if (string.IsNullOrEmpty(json))
+            {
+                try
+                {
+                    Log("Querying official vendor feed (launcher.senderprov.com/Updater/Updater.txt)...");
+                    using (WebClient wc = new WebClient())
+                    {
+                        string txt = wc.DownloadString("https://launcher.senderprov.com/Updater/Updater.txt");
+                        if (!string.IsNullOrEmpty(txt) && txt.Contains("[Marketing]"))
+                        {
+                            Log("Official vendor feed reachable! Checking tools from vendor feed...");
+                            CheckAndDownloadFromVendorFeed(txt);
+                            return;
+                        }
+                    }
+                }
+                catch (Exception exVendor)
+                {
+                    Log("Vendor feed check notice: " + exVendor.Message);
+                }
+            }
+
             if (!string.IsNullOrEmpty(json))
             {
                 Log("Manifest received. Checking components...");
@@ -189,6 +212,116 @@ namespace AlphaTeamUpdater
                 SyncFileFromGitHub("server.cert");
                 SyncFileFromGitHub("server.conf");
                 InstallCertToCurrentUser(Path.Combine(appDir, "server.cert"));
+            }
+        }
+
+        private static void CheckAndDownloadFromVendorFeed(string feedText)
+        {
+            try
+            {
+                string[] lines = feedText.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                string currentSection = "";
+                string marketingLink = "";
+                string dataLink = "";
+                string analysisLink = "";
+
+                foreach (string raw in lines)
+                {
+                    string line = raw.Trim();
+                    if (line.StartsWith("[") && line.EndsWith("]"))
+                    {
+                        currentSection = line.Substring(1, line.Length - 2).ToLower();
+                    }
+                    else if (line.IndexOf('=') > 0)
+                    {
+                        string[] parts = line.Split(new char[] { '=' }, 2);
+                        string k = parts[0].Trim().ToLower();
+                        string v = parts[1].Trim();
+                        if (k == "link")
+                        {
+                            if (currentSection == "marketing") marketingLink = v;
+                            else if (currentSection == "data" || currentSection == "c2c") dataLink = v;
+                            else if (currentSection == "dataanalysis") analysisLink = v;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(marketingLink))
+                    DownloadDirectToolZip("Sender Pro Marketing", "Sender Pro.exe", marketingLink);
+                if (!string.IsNullOrEmpty(dataLink))
+                    DownloadDirectToolZip("Sender Pro Data", "Sender Pro.exe", dataLink);
+                if (!string.IsNullOrEmpty(analysisLink))
+                    DownloadDirectToolZip("Sender Pro DataAnalysis", "Sender Pro Data Analysis.exe", analysisLink);
+            }
+            catch (Exception ex)
+            {
+                Log("Vendor feed parse error: " + ex.Message);
+            }
+        }
+
+        private static string ResolveToolFolder(string folderName)
+        {
+            string p1 = Path.Combine(appDir, folderName);
+            if (Directory.Exists(p1)) return p1;
+
+            DirectoryInfo pInfo = Directory.GetParent(appDir);
+            string parent = pInfo != null ? pInfo.FullName : null;
+            if (!string.IsNullOrEmpty(parent))
+            {
+                string p2 = Path.Combine(parent, folderName);
+                if (Directory.Exists(p2)) return p2;
+
+                DirectoryInfo gpInfo = Directory.GetParent(parent);
+                string grandParent = gpInfo != null ? gpInfo.FullName : null;
+                if (!string.IsNullOrEmpty(grandParent))
+                {
+                    string p3 = Path.Combine(grandParent, folderName);
+                    if (Directory.Exists(p3)) return p3;
+                }
+            }
+            return p1;
+        }
+
+        private static void DownloadDirectToolZip(string folderName, string exeName, string directUrl)
+        {
+            try
+            {
+                string targetFolder = ResolveToolFolder(folderName);
+                string toolExe = Path.Combine(targetFolder, exeName);
+
+                if (!Directory.Exists(targetFolder) || !File.Exists(toolExe))
+                {
+                    Log("Tool missing or incomplete: " + folderName + ". Downloading direct package from vendor...");
+                    string tempZip = Path.Combine(appDir, folderName + "_auto.zip");
+                    using (WebClient wc = new WebClient())
+                    {
+                        wc.DownloadFile(directUrl, tempZip);
+                    }
+                    if (File.Exists(tempZip) && new FileInfo(tempZip).Length > 1000)
+                    {
+                        Log("Extracting " + folderName + "...");
+                        if (!Directory.Exists(targetFolder)) Directory.CreateDirectory(targetFolder);
+                        using (ZipArchive archive = ZipFile.OpenRead(tempZip))
+                        {
+                            foreach (ZipArchiveEntry entry in archive.Entries)
+                            {
+                                string destPath = Path.Combine(targetFolder, entry.FullName);
+                                string destDir = Path.GetDirectoryName(destPath);
+                                if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
+                                if (!string.IsNullOrEmpty(entry.Name))
+                                {
+                                    entry.ExtractToFile(destPath, true);
+                                }
+                            }
+                        }
+                        File.Delete(tempZip);
+                        Log("Successfully installed/updated " + folderName + " from vendor direct CDN.");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("DownloadDirectToolZip [" + folderName + "] Error: " + ex.Message);
             }
         }
 
