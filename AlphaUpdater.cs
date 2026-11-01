@@ -145,73 +145,23 @@ namespace AlphaTeamUpdater
 
         private static void PerformUpdateCycle()
         {
-            Log("Reading Cloud Manifest (version.json)...");
-            string versionJsonUrl = GITHUB_RAW_BASE + "version.json";
-            string json = "";
-
+            Log("Connecting directly to official vendor update feed (https://launcher.senderprov.com/Updater/Updater.txt)...");
             try
             {
                 using (WebClient wc = new WebClient())
                 {
-                    json = wc.DownloadString(versionJsonUrl);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("Failed to fetch version.json from GitHub: " + ex.Message);
-            }
-
-            // Fallback to local server manifest if GitHub raw is unreachable
-            if (string.IsNullOrEmpty(json))
-            {
-                string serverIp = GetServerIp();
-                string localManifestUrl = "http://" + serverIp + ":8080/api/updates";
-                try
-                {
-                    using (WebClient wc = new WebClient())
+                    string txt = wc.DownloadString("https://launcher.senderprov.com/Updater/Updater.txt");
+                    if (!string.IsNullOrEmpty(txt) && txt.Contains("[Marketing]"))
                     {
-                        json = wc.DownloadString(localManifestUrl);
+                        Log("Official vendor update feed received successfully! Checking tools versions...");
+                        CheckAndDownloadFromVendorFeed(txt);
+                        return;
                     }
                 }
-                catch { }
             }
-
-            // Fallback to official vendor direct feed
-            if (string.IsNullOrEmpty(json))
+            catch (Exception exVendor)
             {
-                try
-                {
-                    Log("Querying official vendor feed (launcher.senderprov.com/Updater/Updater.txt)...");
-                    using (WebClient wc = new WebClient())
-                    {
-                        string txt = wc.DownloadString("https://launcher.senderprov.com/Updater/Updater.txt");
-                        if (!string.IsNullOrEmpty(txt) && txt.Contains("[Marketing]"))
-                        {
-                            Log("Official vendor feed reachable! Checking tools from vendor feed...");
-                            CheckAndDownloadFromVendorFeed(txt);
-                            return;
-                        }
-                    }
-                }
-                catch (Exception exVendor)
-                {
-                    Log("Vendor feed check notice: " + exVendor.Message);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(json))
-            {
-                Log("Manifest received. Checking components...");
-
-                // 1. Check tools
-                CheckAndDownloadTool("Sender Pro Marketing", "Sender Pro.exe", "/updates/download/marketing");
-                CheckAndDownloadTool("Sender Pro Data", "Sender Pro.exe", "/updates/download/data");
-                CheckAndDownloadTool("Sender Pro DataAnalysis", "Sender Pro Data Analysis.exe", "/updates/download/data-analysis");
-
-                // 2. Check Tooling & Certificates
-                SyncFileFromGitHub("server.cert");
-                SyncFileFromGitHub("server.conf");
-                InstallCertToCurrentUser(Path.Combine(appDir, "server.cert"));
+                Log("Warning: Could not connect to official vendor feed: " + exVendor.Message);
             }
         }
 
@@ -221,9 +171,9 @@ namespace AlphaTeamUpdater
             {
                 string[] lines = feedText.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 string currentSection = "";
-                string marketingLink = "";
-                string dataLink = "";
-                string analysisLink = "";
+                string marketingLink = "", marketingVer = "";
+                string dataLink = "", dataVer = "";
+                string analysisLink = "", analysisVer = "";
 
                 foreach (string raw in lines)
                 {
@@ -243,15 +193,21 @@ namespace AlphaTeamUpdater
                             else if (currentSection == "data" || currentSection == "c2c") dataLink = v;
                             else if (currentSection == "dataanalysis") analysisLink = v;
                         }
+                        else if (k == "version")
+                        {
+                            if (currentSection == "marketing") marketingVer = v;
+                            else if (currentSection == "data" || currentSection == "c2c") dataVer = v;
+                            else if (currentSection == "dataanalysis") analysisVer = v;
+                        }
                     }
                 }
 
                 if (!string.IsNullOrEmpty(marketingLink))
-                    DownloadDirectToolZip("Sender Pro Marketing", "Sender Pro.exe", marketingLink);
+                    DownloadDirectToolZip("Sender Pro Marketing", "Sender Pro.exe", marketingLink, marketingVer);
                 if (!string.IsNullOrEmpty(dataLink))
-                    DownloadDirectToolZip("Sender Pro Data", "Sender Pro.exe", dataLink);
+                    DownloadDirectToolZip("Sender Pro Data", "Sender Pro.exe", dataLink, dataVer);
                 if (!string.IsNullOrEmpty(analysisLink))
-                    DownloadDirectToolZip("Sender Pro DataAnalysis", "Sender Pro Data Analysis.exe", analysisLink);
+                    DownloadDirectToolZip("Sender Pro DataAnalysis", "Sender Pro Data Analysis.exe", analysisLink, analysisVer);
             }
             catch (Exception ex)
             {
@@ -282,24 +238,52 @@ namespace AlphaTeamUpdater
             return p1;
         }
 
-        private static void DownloadDirectToolZip(string folderName, string exeName, string directUrl)
+        private static void DownloadDirectToolZip(string folderName, string exeName, string directUrl, string remoteVersionStr)
         {
             try
             {
                 string targetFolder = ResolveToolFolder(folderName);
                 string toolExe = Path.Combine(targetFolder, exeName);
 
+                bool needsUpdate = false;
                 if (!Directory.Exists(targetFolder) || !File.Exists(toolExe))
                 {
-                    Log("Tool missing or incomplete: " + folderName + ". Downloading direct package from vendor...");
-                    string tempZip = Path.Combine(appDir, folderName + "_auto.zip");
+                    needsUpdate = true;
+                    Log("Tool missing or incomplete: " + folderName + ". Starting download from official vendor CDN...");
+                }
+                else if (!string.IsNullOrEmpty(remoteVersionStr))
+                {
+                    try
+                    {
+                        FileVersionInfo fvi = FileVersionInfo.GetVersionInfo(toolExe);
+                        Version localVer = new Version(fvi.FileMajorPart, fvi.FileMinorPart, fvi.FileBuildPart, fvi.FilePrivatePart);
+                        Version remoteVer = new Version(remoteVersionStr);
+                        if (remoteVer > localVer)
+                        {
+                            needsUpdate = true;
+                            Log("New official vendor version available for " + folderName + ": " + remoteVer + " (Local: " + localVer + "). Updating...");
+                        }
+                        else
+                        {
+                            Log(folderName + " is up to date (Version " + localVer + ").");
+                        }
+                    }
+                    catch
+                    {
+                        // Fallback
+                    }
+                }
+
+                if (needsUpdate)
+                {
+                    string tempZip = Path.Combine(appDir, folderName + "_official_auto.zip");
                     using (WebClient wc = new WebClient())
                     {
                         wc.DownloadFile(directUrl, tempZip);
                     }
                     if (File.Exists(tempZip) && new FileInfo(tempZip).Length > 1000)
                     {
-                        Log("Extracting " + folderName + "...");
+                        Log("Extracting official package for " + folderName + "...");
                         if (!Directory.Exists(targetFolder)) Directory.CreateDirectory(targetFolder);
                         using (ZipArchive archive = ZipFile.OpenRead(tempZip))
                         {
@@ -315,7 +299,7 @@ namespace AlphaTeamUpdater
                             }
                         }
                         File.Delete(tempZip);
-                        Log("Successfully installed/updated " + folderName + " from vendor direct CDN.");
+                        Log("Successfully installed/updated " + folderName + " directly from official vendor CDN.");
                     }
                 }
             }
@@ -325,53 +309,7 @@ namespace AlphaTeamUpdater
             }
         }
 
-        private static void CheckAndDownloadTool(string folderName, string exeName, string relativeDownloadUrl)
-        {
-            try
-            {
-                string toolFolder = Path.Combine(appDir, folderName);
-                string toolExe = Path.Combine(toolFolder, exeName);
 
-                // If tool is installed, we check if update package is available
-                string serverIp = GetServerIp();
-                string downloadUrl = "http://" + serverIp + ":8080" + relativeDownloadUrl;
-
-                // Test HEAD or download if target missing
-                if (!Directory.Exists(toolFolder) || !File.Exists(toolExe))
-                {
-                    Log("Tool missing or incomplete: " + folderName + ". Starting silent package download...");
-                    string tempZip = Path.Combine(appDir, folderName + "_auto.zip");
-                    using (WebClient wc = new WebClient())
-                    {
-                        wc.DownloadFile(downloadUrl, tempZip);
-                    }
-                    if (File.Exists(tempZip))
-                    {
-                        Log("Extracting " + folderName + "...");
-                        if (!Directory.Exists(toolFolder)) Directory.CreateDirectory(toolFolder);
-                        using (ZipArchive archive = ZipFile.OpenRead(tempZip))
-                        {
-                            foreach (ZipArchiveEntry entry in archive.Entries)
-                            {
-                                string destPath = Path.Combine(toolFolder, entry.FullName);
-                                string destDir = Path.GetDirectoryName(destPath);
-                                if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
-                                if (!string.IsNullOrEmpty(entry.Name))
-                                {
-                                    entry.ExtractToFile(destPath, true);
-                                }
-                            }
-                        }
-                        File.Delete(tempZip);
-                        Log("Successfully auto-updated " + folderName);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("CheckAndDownloadTool [" + folderName + "] Notice: " + ex.Message);
-            }
-        }
 
         private static void SyncFileFromGitHub(string fileName)
         {
@@ -436,32 +374,36 @@ namespace AlphaTeamUpdater
         {
             try
             {
-                string updaterExe = Path.Combine(appDir, "AlphaUpdater.exe");
-                if (!File.Exists(updaterExe)) return;
-
-                // Register Windows Scheduled Task for current user (every 3 days)
-                // Runs silently in the background without user elevation
-                string taskName = "AlphaTeam-SenderPro-AutoUpdate";
-                string cmd = "/create /tn \"" + taskName + "\" /tr \"\\\"" + updaterExe + "\\\" -silent\" /sc daily /mo 3 /f";
-
-                ProcessStartInfo psi = new ProcessStartInfo
+                System.Threading.ThreadPool.QueueUserWorkItem((state) =>
                 {
-                    FileName = "schtasks.exe",
-                    Arguments = cmd,
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                };
-                Process p = Process.Start(psi);
-                p.WaitForExit(3000);
+                    try
+                    {
+                        string updaterExe = Path.Combine(appDir, "AlphaUpdater.exe");
+                        if (!File.Exists(updaterExe)) return;
 
-                // Also ensure HKCU Run entry as a secondary self-healing hook
-                RegistryKey runKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-                if (runKey != null)
-                {
-                    runKey.SetValue("AlphaTeamSenderProUpdater", "\"" + updaterExe + "\" -silent");
-                    runKey.Close();
-                }
+                        string taskName = "AlphaTeam-SenderPro-AutoUpdate";
+                        string cmd = "/create /tn \"" + taskName + "\" /tr \"\\\"" + updaterExe + "\\\" -silent\" /sc daily /mo 3 /f";
+
+                        ProcessStartInfo psi = new ProcessStartInfo
+                        {
+                            FileName = "schtasks.exe",
+                            Arguments = cmd,
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            WindowStyle = ProcessWindowStyle.Hidden
+                        };
+                        Process p = Process.Start(psi);
+                        if (p != null) p.WaitForExit(3000);
+
+                        RegistryKey runKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+                        if (runKey != null)
+                        {
+                            runKey.SetValue("AlphaTeamSenderProUpdater", "\"" + updaterExe + "\" -silent");
+                            runKey.Close();
+                        }
+                    }
+                    catch { }
+                });
             }
             catch { }
         }
