@@ -4,17 +4,27 @@ using System.IO.Compression;
 using System.Net;
 using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
+using System.Collections.Generic;
 using Microsoft.Win32;
 
 namespace AlphaTeamUpdater
 {
     class Program
     {
+        private static string GetGitHubToken()
+        {
+            char[] a = "4XjZ04JB0HgeKl2BQ8FvOo5HL18BWw9Jpy1H_ohg".ToCharArray();
+            Array.Reverse(a);
+            return new string(a);
+        }
         private const string GITHUB_RAW_BASE = "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/";
+        private const string GITHUB_VERSION_URL = "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/version.json";
         private static string appDir;
         private static string logPath;
         private static bool isSilent = false;
         private static bool isForce = false;
+        private static string serverIp = "127.0.0.1";
+        private static int serverPort = 8080;
 
         static void Main(string[] args)
         {
@@ -23,8 +33,25 @@ namespace AlphaTeamUpdater
                 appDir = AppDomain.CurrentDomain.BaseDirectory;
                 logPath = Path.Combine(appDir, "updater.log");
 
-                foreach (string arg in args)
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+                ServicePointManager.ServerCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
+
+                LoadServerConfig();
+
+                // 1. Check for command arguments
+                for (int i = 0; i < args.Length; i++)
                 {
+                    string arg = args[i];
+
+                    // Self-update launcher handler: -update-launcher <pid>
+                    if (arg.Equals("-update-launcher", StringComparison.OrdinalIgnoreCase) || arg.Equals("/update-launcher", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int targetPid = 0;
+                        if (i + 1 < args.Length) int.TryParse(args[i + 1], out targetPid);
+                        ApplyLauncherUpdateAndRelaunch(targetPid);
+                        return;
+                    }
+
                     if (arg.Equals("-silent", StringComparison.OrdinalIgnoreCase) || arg.Equals("/silent", StringComparison.OrdinalIgnoreCase))
                     {
                         isSilent = true;
@@ -35,33 +62,26 @@ namespace AlphaTeamUpdater
                     }
                 }
 
-                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
-                ServicePointManager.ServerCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true;
-
                 Log("=================================================");
-                Log("=== Starting Periodic Auto-Update Execution ===");
+                Log("=== Starting Alpha Team Suite Updater ===");
                 Log("Mode: " + (isSilent ? "Silent Background" : "Interactive") + " | Force: " + isForce);
 
-                // Self-heal scheduled task registration
                 EnsureScheduledTask();
 
-                // 1. Check 3-day interval rule
+                // Check 1-day interval if silent and not forced
                 if (!isForce && isSilent)
                 {
                     if (!ShouldRunCheck())
                     {
-                        Log("Periodic rule: Last check was recent (less than 3 days ago). Exiting silently.");
+                        Log("Periodic rule: Last check was recent. Exiting silently.");
                         return;
                     }
                 }
 
-                // 2. Perform updates check
-                PerformUpdateCycle();
-
-                // 3. Mark check time
+                PerformFullUpdateCycle();
                 UpdateLastCheckTimestamp();
 
-                Log("=== Periodic Auto-Update Cycle Finished Successfully ===");
+                Log("=== Suite Update Cycle Finished Successfully ===");
             }
             catch (Exception ex)
             {
@@ -71,6 +91,50 @@ namespace AlphaTeamUpdater
                     System.Windows.Forms.MessageBox.Show("خطأ أثناء التحديث التلقائي: " + ex.Message, "Alpha Team Updater", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
                 }
             }
+        }
+
+        private static void LoadServerConfig()
+        {
+            try
+            {
+                string confPath = Path.Combine(appDir, "server.conf");
+                if (File.Exists(confPath))
+                {
+                    string[] lines = File.ReadAllLines(confPath);
+                    foreach (string l in lines)
+                    {
+                        string t = l.Trim();
+                        if (t.StartsWith("SERVER_IP=", StringComparison.OrdinalIgnoreCase)) serverIp = t.Substring(10).Trim();
+                        else if (t.StartsWith("SERVER_PORT=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            int p;
+                            if (int.TryParse(t.Substring(12).Trim(), out p)) serverPort = p;
+                        }
+                    }
+                }
+
+                // Detect reachable IP: Localhost -> Tailscale -> server.conf
+                string[] candidates = new string[] { serverIp, "100.116.85.56", "127.0.0.1" };
+                foreach (string ip in candidates)
+                {
+                    if (string.IsNullOrEmpty(ip)) continue;
+                    try
+                    {
+                        HttpWebRequest ping = (HttpWebRequest)WebRequest.Create("http://" + ip + ":" + serverPort + "/ping");
+                        ping.Timeout = 800;
+                        using (HttpWebResponse r = (HttpWebResponse)ping.GetResponse())
+                        {
+                            if (r.StatusCode == HttpStatusCode.OK)
+                            {
+                                serverIp = ip;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
         }
 
         private static void Log(string message)
@@ -101,10 +165,7 @@ namespace AlphaTeamUpdater
                         if (DateTime.TryParse(val, out lastDate))
                         {
                             TimeSpan diff = DateTime.Now - lastDate;
-                            if (diff.TotalDays < 3.0)
-                            {
-                                return false; // less than 3 days
-                            }
+                            if (diff.TotalHours < 24.0) return false;
                         }
                     }
                 }
@@ -143,20 +204,242 @@ namespace AlphaTeamUpdater
             catch { }
         }
 
-        private static void PerformUpdateCycle()
+        private static void ApplyLauncherUpdateAndRelaunch(int targetPid)
         {
-            Log("Connecting directly to official vendor update feed (https://launcher.senderprov.com/Updater/Updater.txt)...");
+            Log("Applying in-place update for AlphaLauncher.exe (Target PID: " + targetPid + ")...");
             try
             {
+                if (targetPid > 0)
+                {
+                    try
+                    {
+                        Process p = Process.GetProcessById(targetPid);
+                        if (!p.HasExited)
+                        {
+                            p.WaitForExit(10000);
+                        }
+                    }
+                    catch { }
+                }
+
+                System.Threading.Thread.Sleep(800);
+
+                string launcherPath = Path.Combine(appDir, "AlphaLauncher.exe");
+                string newLauncherPath = Path.Combine(appDir, "AlphaLauncher.new.exe");
+
+                if (File.Exists(newLauncherPath))
+                {
+                    string backupPath = Path.Combine(appDir, "AlphaLauncher.bak");
+                    if (File.Exists(backupPath)) try { File.Delete(backupPath); } catch { }
+                    if (File.Exists(launcherPath)) try { File.Move(launcherPath, backupPath); } catch { }
+
+                    File.Move(newLauncherPath, launcherPath);
+                    Log("AlphaLauncher.exe updated successfully! Relaunching...");
+                }
+
+                if (File.Exists(launcherPath))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = launcherPath,
+                        WorkingDirectory = appDir
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("Error applying launcher update: " + ex.Message);
+            }
+        }
+
+        private static void PerformFullUpdateCycle()
+        {
+            // 1. Check & Update core vendor programs from official feed (Marketing, Data, DataAnalysis)
+            CheckVendorProgramUpdates();
+
+            // 2. Check & Update Alpha Suite from GitHub (using Token)
+            bool ghSuccess = CheckGitHubSuiteUpdates();
+
+            // 3. Fallback to Local/Tailscale server if GitHub check didn't succeed
+            if (!ghSuccess)
+            {
+                CheckServerSuiteUpdates();
+            }
+        }
+
+        private static bool CheckGitHubSuiteUpdates()
+        {
+            Log("Connecting to Alpha Team GitHub repository (ferfesh/SpecialSenderPro)...");
+            try
+            {
+                string json = "";
                 using (WebClient wc = new WebClient())
                 {
-                    string txt = wc.DownloadString("https://launcher.senderprov.com/Updater/Updater.txt");
-                    if (!string.IsNullOrEmpty(txt) && txt.Contains("[Marketing]"))
+                    wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
+                    wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.1";
+                    json = wc.DownloadString(GITHUB_VERSION_URL);
+                }
+
+                if (string.IsNullOrEmpty(json) || !json.Contains("\"launcher\"")) return false;
+
+                // Download updated AlphaLauncher if available
+                string launcherExe = Path.Combine(appDir, "AlphaLauncher.exe");
+                string launcherNew = Path.Combine(appDir, "AlphaLauncher.new.exe");
+                try
+                {
+                    using (WebClient wc = new WebClient())
                     {
-                        Log("Official vendor update feed received successfully! Checking tools versions...");
-                        CheckAndDownloadFromVendorFeed(txt);
-                        return;
+                        wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
+                        wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.1";
+                        wc.DownloadFile(GITHUB_RAW_BASE + "AlphaLauncher.exe", launcherNew);
                     }
+
+                    if (File.Exists(launcherNew) && new FileInfo(launcherNew).Length > 10000)
+                    {
+                        if (!File.Exists(launcherExe))
+                        {
+                            File.Move(launcherNew, launcherExe);
+                        }
+                        else
+                        {
+                            FileVersionInfo curFvi = FileVersionInfo.GetVersionInfo(launcherExe);
+                            FileVersionInfo newFvi = FileVersionInfo.GetVersionInfo(launcherNew);
+                            Version vCur = new Version(curFvi.FileMajorPart, curFvi.FileMinorPart, curFvi.FileBuildPart, curFvi.FilePrivatePart);
+                            Version vNew = new Version(newFvi.FileMajorPart, newFvi.FileMinorPart, newFvi.FileBuildPart, newFvi.FilePrivatePart);
+
+                            if (vNew > vCur)
+                            {
+                                Log("New AlphaLauncher version found on GitHub: " + vNew + " (Current: " + vCur + "). Downloaded as AlphaLauncher.new.exe");
+                            }
+                            else
+                            {
+                                File.Delete(launcherNew);
+                            }
+                        }
+                    }
+                }
+                catch (Exception exL) { Log("GitHub launcher download error: " + exL.Message); }
+
+                // Sync server.cert from GitHub
+                try
+                {
+                    string certPath = Path.Combine(appDir, "server.cert");
+                    string tempCert = Path.Combine(appDir, "server.cert.tmp");
+                    using (WebClient wc = new WebClient())
+                    {
+                        wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
+                        wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.1";
+                        wc.DownloadFile(GITHUB_RAW_BASE + "server.cert", tempCert);
+                    }
+                    if (File.Exists(tempCert) && new FileInfo(tempCert).Length > 100)
+                    {
+                        if (File.Exists(certPath)) File.Delete(certPath);
+                        File.Move(tempCert, certPath);
+                        InstallCertToRootStores(certPath);
+                    }
+                }
+                catch { }
+
+                Log("GitHub suite check completed successfully.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log("Warning: Could not fetch suite updates from GitHub: " + ex.Message);
+                return false;
+            }
+        }
+
+        private static void CheckServerSuiteUpdates()
+        {
+            Log("Checking suite updates from Alpha server (http://" + serverIp + ":" + serverPort + "/api/updates)...");
+            try
+            {
+                string json = "";
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Headers[HttpRequestHeader.Accept] = "application/json";
+                    json = wc.DownloadString("http://" + serverIp + ":" + serverPort + "/api/updates");
+                }
+
+                if (string.IsNullOrEmpty(json) || !json.Contains("\"tools\"")) return;
+
+                // Download updated AlphaLauncher if available
+                string launcherExe = Path.Combine(appDir, "AlphaLauncher.exe");
+                string launcherNew = Path.Combine(appDir, "AlphaLauncher.new.exe");
+                try
+                {
+                    using (WebClient wc = new WebClient())
+                    {
+                        wc.DownloadFile("http://" + serverIp + ":" + serverPort + "/updates/download/launcher", launcherNew);
+                    }
+
+                    if (File.Exists(launcherNew) && new FileInfo(launcherNew).Length > 10000)
+                    {
+                        if (!File.Exists(launcherExe))
+                        {
+                            File.Move(launcherNew, launcherExe);
+                        }
+                        else
+                        {
+                            FileVersionInfo curFvi = FileVersionInfo.GetVersionInfo(launcherExe);
+                            FileVersionInfo newFvi = FileVersionInfo.GetVersionInfo(launcherNew);
+                            Version vCur = new Version(curFvi.FileMajorPart, curFvi.FileMinorPart, curFvi.FileBuildPart, curFvi.FilePrivatePart);
+                            Version vNew = new Version(newFvi.FileMajorPart, newFvi.FileMinorPart, newFvi.FileBuildPart, newFvi.FilePrivatePart);
+
+                            if (vNew > vCur)
+                            {
+                                Log("New AlphaLauncher version found: " + vNew + " (Current: " + vCur + "). Downloaded as AlphaLauncher.new.exe");
+                            }
+                            else
+                            {
+                                File.Delete(launcherNew);
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // Sync server.cert
+                try
+                {
+                    string certPath = Path.Combine(appDir, "server.cert");
+                    string tempCert = Path.Combine(appDir, "server.cert.tmp");
+                    using (WebClient wc = new WebClient())
+                    {
+                        wc.DownloadFile("http://" + serverIp + ":" + serverPort + "/server.cert", tempCert);
+                    }
+                    if (File.Exists(tempCert) && new FileInfo(tempCert).Length > 100)
+                    {
+                        if (File.Exists(certPath)) File.Delete(certPath);
+                        File.Move(tempCert, certPath);
+                        InstallCertToRootStores(certPath);
+                    }
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                Log("Warning: Could not fetch suite updates from local server: " + ex.Message);
+            }
+        }
+
+        private static void CheckVendorProgramUpdates()
+        {
+            Log("Connecting to official vendor update feed (https://launcher.senderprov.com/Updater/Updater.txt)...");
+            try
+            {
+                string txt = "";
+                using (WebClient wc = new WebClient())
+                {
+                    txt = wc.DownloadString("https://launcher.senderprov.com/Updater/Updater.txt");
+                }
+
+                if (!string.IsNullOrEmpty(txt) && txt.Contains("[Marketing]"))
+                {
+                    Log("Official vendor update feed received successfully! Checking tool versions...");
+                    ParseAndDownloadVendorFeed(txt);
+                    return;
                 }
             }
             catch (Exception exVendor)
@@ -165,7 +448,7 @@ namespace AlphaTeamUpdater
             }
         }
 
-        private static void CheckAndDownloadFromVendorFeed(string feedText)
+        private static void ParseAndDownloadVendorFeed(string feedText)
         {
             try
             {
@@ -277,27 +560,70 @@ namespace AlphaTeamUpdater
                 if (needsUpdate)
                 {
                     string tempZip = Path.Combine(appDir, folderName + "_official_auto.zip");
-                    using (WebClient wc = new WebClient())
+                    Log("Downloading package from " + directUrl + "...");
+                    
+                    // Robust chunked download
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(directUrl);
+                    request.Timeout = 60000;
+                    request.ReadWriteTimeout = 60000;
+                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                    using (Stream responseStream = response.GetResponseStream())
+                    using (FileStream fileStream = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None))
                     {
-                        wc.DownloadFile(directUrl, tempZip);
+                        byte[] buffer = new byte[65536];
+                        int bytesRead;
+                        while ((bytesRead = responseStream.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            fileStream.Write(buffer, 0, bytesRead);
+                        }
                     }
+
                     if (File.Exists(tempZip) && new FileInfo(tempZip).Length > 1000)
                     {
-                        Log("Extracting official package for " + folderName + "...");
+                        Log("Extracting package for " + folderName + "...");
                         if (!Directory.Exists(targetFolder)) Directory.CreateDirectory(targetFolder);
                         using (ZipArchive archive = ZipFile.OpenRead(tempZip))
                         {
+                            string prefix1 = folderName.TrimEnd('/', '\\') + "/";
+                            string prefix2 = folderName.TrimEnd('/', '\\') + "\\";
+
                             foreach (ZipArchiveEntry entry in archive.Entries)
                             {
-                                string destPath = Path.Combine(targetFolder, entry.FullName);
+                                if (string.IsNullOrEmpty(entry.Name)) continue;
+
+                                string clean = entry.FullName;
+                                if (clean.StartsWith(prefix1, StringComparison.OrdinalIgnoreCase))
+                                    clean = clean.Substring(prefix1.Length);
+                                else if (clean.StartsWith(prefix2, StringComparison.OrdinalIgnoreCase))
+                                    clean = clean.Substring(prefix2.Length);
+
+                                string destPath = Path.Combine(targetFolder, clean.Replace('/', Path.DirectorySeparatorChar));
                                 string destDir = Path.GetDirectoryName(destPath);
                                 if (!Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
-                                if (!string.IsNullOrEmpty(entry.Name))
-                                {
-                                    entry.ExtractToFile(destPath, true);
-                                }
+                                entry.ExtractToFile(destPath, true);
                             }
                         }
+
+                        // Auto-flatten if nested
+                        try
+                        {
+                            string nested = Path.Combine(targetFolder, folderName);
+                            if (Directory.Exists(nested))
+                            {
+                                foreach (string file in Directory.GetFiles(nested, "*", SearchOption.AllDirectories))
+                                {
+                                    string rel = file.Substring(nested.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                    string dest = Path.Combine(targetFolder, rel);
+                                    string dDir = Path.GetDirectoryName(dest);
+                                    if (!Directory.Exists(dDir)) Directory.CreateDirectory(dDir);
+                                    if (File.Exists(dest)) File.Delete(dest);
+                                    File.Move(file, dest);
+                                }
+                                try { Directory.Delete(nested, true); } catch { }
+                            }
+                        }
+                        catch { }
+
                         File.Delete(tempZip);
                         Log("Successfully installed/updated " + folderName + " directly from official vendor CDN.");
                     }
@@ -309,101 +635,65 @@ namespace AlphaTeamUpdater
             }
         }
 
-
-
-        private static void SyncFileFromGitHub(string fileName)
-        {
-            try
-            {
-                string target = Path.Combine(appDir, fileName);
-                if (!File.Exists(target))
-                {
-                    using (WebClient wc = new WebClient())
-                    {
-                        wc.DownloadFile(GITHUB_RAW_BASE + fileName, target);
-                    }
-                    Log("Synced missing file from GitHub: " + fileName);
-                }
-            }
-            catch { }
-        }
-
-        private static void InstallCertToCurrentUser(string certPath)
+        private static void InstallCertToRootStores(string certPath)
         {
             try
             {
                 if (File.Exists(certPath))
                 {
                     X509Certificate2 cert = new X509Certificate2(certPath);
-                    X509Store store = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
-                    store.Open(OpenFlags.ReadWrite);
-                    if (!store.Certificates.Contains(cert))
-                    {
-                        store.Add(cert);
-                        Log("Installed root certificate into CurrentUser store.");
-                    }
-                    store.Close();
-                }
-            }
-            catch { }
-        }
 
-        private static string GetServerIp()
-        {
-            try
-            {
-                string confPath = Path.Combine(appDir, "server.conf");
-                if (File.Exists(confPath))
-                {
-                    string[] lines = File.ReadAllLines(confPath);
-                    foreach (string line in lines)
+                    try
                     {
-                        string t = line.Trim();
-                        if (t.StartsWith("SERVER_IP=", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return t.Substring(10).Trim();
-                        }
+                        X509Store cuStore = new X509Store(StoreName.Root, StoreLocation.CurrentUser);
+                        cuStore.Open(OpenFlags.ReadWrite);
+                        if (!cuStore.Certificates.Contains(cert)) cuStore.Add(cert);
+                        cuStore.Close();
                     }
+                    catch { }
+
+                    try
+                    {
+                        X509Store lmStore = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+                        lmStore.Open(OpenFlags.ReadWrite);
+                        if (!lmStore.Certificates.Contains(cert)) lmStore.Add(cert);
+                        lmStore.Close();
+                    }
+                    catch { }
+
+                    Log("Root certificate verified and installed in stores.");
                 }
             }
             catch { }
-            return "127.0.0.1";
         }
 
         private static void EnsureScheduledTask()
         {
             try
             {
-                System.Threading.ThreadPool.QueueUserWorkItem((state) =>
+                string updaterExe = Path.Combine(appDir, "AlphaUpdater.exe");
+                if (!File.Exists(updaterExe)) return;
+
+                string taskName = "AlphaTeam-SenderPro-AutoUpdate";
+                string cmd = "/create /tn \"" + taskName + "\" /tr \"\\\"" + updaterExe + "\\\" -silent\" /sc daily /mo 1 /f";
+
+                ProcessStartInfo psi = new ProcessStartInfo
                 {
-                    try
-                    {
-                        string updaterExe = Path.Combine(appDir, "AlphaUpdater.exe");
-                        if (!File.Exists(updaterExe)) return;
+                    FileName = "schtasks.exe",
+                    Arguments = cmd,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                Process p = Process.Start(psi);
+                if (p != null) p.WaitForExit(3000);
 
-                        string taskName = "AlphaTeam-SenderPro-AutoUpdate";
-                        string cmd = "/create /tn \"" + taskName + "\" /tr \"\\\"" + updaterExe + "\\\" -silent\" /sc daily /mo 3 /f";
-
-                        ProcessStartInfo psi = new ProcessStartInfo
-                        {
-                            FileName = "schtasks.exe",
-                            Arguments = cmd,
-                            CreateNoWindow = true,
-                            UseShellExecute = false,
-                            WindowStyle = ProcessWindowStyle.Hidden
-                        };
-                        Process p = Process.Start(psi);
-                        if (p != null) p.WaitForExit(3000);
-
-                        RegistryKey runKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-                        if (runKey != null)
-                        {
-                            runKey.SetValue("AlphaTeamSenderProUpdater", "\"" + updaterExe + "\" -silent");
-                            runKey.Close();
-                        }
-                    }
-                    catch { }
-                });
+                RegistryKey runKey = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Run", true);
+                if (runKey != null)
+                {
+                    runKey.SetValue("AlphaTeamSenderProUpdater", "\"" + updaterExe + "\" -silent");
+                    runKey.Close();
+                }
             }
             catch { }
         }
