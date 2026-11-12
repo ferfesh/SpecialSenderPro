@@ -1,19 +1,19 @@
 {
-  "version": "65.35.0",
-  "updatedAt": "2026-11-12T12:40:00Z",
+  "version": "65.36.0",
+  "updatedAt": "2026-11-12T14:20:00Z",
   "description": "Alpha Team Sender Pro Client & Tools Manifest - Synced with Official Vendor",
   "installer": {
-    "version": "1.2.0",
+    "version": "1.3.0",
     "fileName": "SenderPro-SmartInstaller.exe",
     "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/SenderPro-SmartInstaller.exe"
   },
   "launcher": {
-    "version": "1.2.0",
+    "version": "1.3.0",
     "fileName": "AlphaLauncher.exe",
     "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/AlphaLauncher.exe"
   },
   "updater": {
-    "version": "1.2.0",
+    "version": "1.3.0",
     "fileName": "AlphaUpdater.exe",
     "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/AlphaUpdater.exe"
   },
@@ -29,17 +29,17 @@
   },
   "officialFeed": {
     "url": "https://launcher.senderprov.com/Updater/Updater.txt",
-    "checkedAt": "2026-10-31T22:08:50Z"
+    "checkedAt": "2026-11-12T14:15:00Z"
   },
   "tools": {
     "marketing": {
       "name": "Sender Pro Marketing",
-      "version": "65.35.0.0",
-      "fileName": "65m35.zip",
+      "version": "65.36.0.0",
+      "fileName": "65m36.zip",
       "folderName": "Sender Pro Marketing",
       "exeName": "Sender Pro.exe",
-      "officialDownloadUrl": "https://launcher.senderprov.com/Updater/Files/marketing/65m35.zip",
-      "downloadUrl": "https://launcher.senderprov.com/Updater/Files/marketing/65m35.zip"
+      "officialDownloadUrl": "https://launcher.senderprov.com/Updater/Files/marketing/65m36.zip",
+      "downloadUrl": "https://launcher.senderprov.com/Updater/Files/marketing/65m36.zip"
     },
     "data": {
       "name": "Sender Pro Data",
