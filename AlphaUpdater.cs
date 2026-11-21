@@ -8,8 +8,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using Microsoft.Win32;
 
-[assembly: AssemblyVersion("1.4.3.0")]
-[assembly: AssemblyFileVersion("1.4.3.0")]
+[assembly: AssemblyVersion("1.4.4.0")]
+[assembly: AssemblyFileVersion("1.4.4.0")]
 [assembly: AssemblyTitle("Alpha Team Updater")]
 [assembly: AssemblyProduct("Alpha Team Suite")]
 
@@ -301,7 +301,7 @@ namespace AlphaTeamUpdater
                     string tok = GetGitHubToken();
                     if (!string.IsNullOrEmpty(tok)) wc.Headers[HttpRequestHeader.Authorization] = "token " + tok;
                     wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.4";
-                    json = wc.DownloadString(GITHUB_VERSION_URL);
+                    json = wc.DownloadString(GITHUB_VERSION_URL + "?t=" + DateTime.UtcNow.Ticks);
                 }
 
                 if (string.IsNullOrEmpty(json) || !json.Contains("\"launcher\"")) return false;
@@ -316,7 +316,7 @@ namespace AlphaTeamUpdater
                         string tok = GetGitHubToken();
                         if (!string.IsNullOrEmpty(tok)) wc.Headers[HttpRequestHeader.Authorization] = "token " + tok;
                         wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.4";
-                        wc.DownloadFile(GITHUB_RAW_BASE + "AlphaLauncher.exe", launcherNew);
+                        wc.DownloadFile(GITHUB_RAW_BASE + "AlphaLauncher.exe?t=" + DateTime.UtcNow.Ticks, launcherNew);
                     }
 
                     if (File.Exists(launcherNew) && new FileInfo(launcherNew).Length > 10000)
@@ -406,7 +406,7 @@ namespace AlphaTeamUpdater
                 using (WebClient wc = new WebClient())
                 {
                     wc.Headers[HttpRequestHeader.Accept] = "application/json";
-                    json = wc.DownloadString("http://" + serverIp + ":" + serverPort + "/api/updates");
+                    json = wc.DownloadString("https://sp.alpha-team.store/updates/updates.json?t=" + DateTime.UtcNow.Ticks);
                 }
 
                 if (string.IsNullOrEmpty(json) || !json.Contains("\"tools\"")) return;
@@ -418,7 +418,7 @@ namespace AlphaTeamUpdater
                 {
                     using (WebClient wc = new WebClient())
                     {
-                        wc.DownloadFile("http://" + serverIp + ":" + serverPort + "/updates/download/launcher", launcherNew);
+                        wc.DownloadFile("https://sp.alpha-team.store/updates/download/launcher?t=" + DateTime.UtcNow.Ticks, launcherNew);
                     }
 
                     if (File.Exists(launcherNew) && new FileInfo(launcherNew).Length > 10000)
