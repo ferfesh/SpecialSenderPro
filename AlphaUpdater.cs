@@ -8,8 +8,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using Microsoft.Win32;
 
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.4.2.0")]
+[assembly: AssemblyFileVersion("1.4.2.0")]
 [assembly: AssemblyTitle("Alpha Team Updater")]
 [assembly: AssemblyProduct("Alpha Team Suite")]
 
@@ -117,8 +117,27 @@ namespace AlphaTeamUpdater
                     }
                 }
 
-                // Detect reachable IP: Localhost -> Tailscale -> server.conf
-                string[] candidates = new string[] { serverIp, "100.116.85.56", "127.0.0.1" };
+                // Detect reachable IP: Cloud First -> Localhost fallback
+                string[] cloudEndpoints = new string[] { "https://sp.alpha-team.store", "https://sp.alpha-team.store.cdn.hstgr.net" };
+                foreach (string u in cloudEndpoints)
+                {
+                    try
+                    {
+                        HttpWebRequest ping = (HttpWebRequest)WebRequest.Create(u + "/ping");
+                        ping.Timeout = 1500;
+                        using (HttpWebResponse r = (HttpWebResponse)ping.GetResponse())
+                        {
+                            if (r.StatusCode == HttpStatusCode.OK)
+                            {
+                                serverIp = new Uri(u).Host;
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                string[] candidates = new string[] { serverIp, "127.0.0.1" };
                 foreach (string ip in candidates)
                 {
                     if (string.IsNullOrEmpty(ip)) continue;
