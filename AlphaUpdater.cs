@@ -5,7 +5,13 @@ using System.Net;
 using System.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
 using System.Collections.Generic;
+using System.Reflection;
 using Microsoft.Win32;
+
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyTitle("Alpha Team Updater")]
+[assembly: AssemblyProduct("Alpha Team Suite")]
 
 namespace AlphaTeamUpdater
 {
@@ -320,6 +326,26 @@ namespace AlphaTeamUpdater
                 }
                 catch (Exception exL) { Log("GitHub launcher download error: " + exL.Message); }
 
+                // Sync server.conf from GitHub
+                try
+                {
+                    string confPath = Path.Combine(appDir, "server.conf");
+                    string tempConf = Path.Combine(appDir, "server.conf.tmp");
+                    using (WebClient wc = new WebClient())
+                    {
+                        wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
+                        wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.4";
+                        wc.DownloadFile(GITHUB_RAW_BASE + "server.conf", tempConf);
+                    }
+                    if (File.Exists(tempConf) && new FileInfo(tempConf).Length > 10)
+                    {
+                        if (File.Exists(confPath)) File.Delete(confPath);
+                        File.Move(tempConf, confPath);
+                        Log("server.conf updated successfully from GitHub.");
+                    }
+                }
+                catch { }
+
                 // Sync server.cert from GitHub
                 try
                 {
@@ -581,6 +607,15 @@ namespace AlphaTeamUpdater
                     if (File.Exists(tempZip) && new FileInfo(tempZip).Length > 1000)
                     {
                         Log("Extracting package for " + folderName + "...");
+                        try
+                        {
+                            string pName = Path.GetFileNameWithoutExtension(exeName);
+                            foreach (Process p in Process.GetProcessesByName(pName))
+                            {
+                                try { p.Kill(); p.WaitForExit(1500); } catch { }
+                            }
+                        }
+                        catch { }
                         if (!Directory.Exists(targetFolder)) Directory.CreateDirectory(targetFolder);
                         using (ZipArchive archive = ZipFile.OpenRead(tempZip))
                         {
