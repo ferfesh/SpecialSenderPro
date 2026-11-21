@@ -19,9 +19,7 @@ namespace AlphaTeamUpdater
     {
         private static string GetGitHubToken()
         {
-            char[] a = "4XjZ04JB0HgeKl2BQ8FvOo5HL18BWw9Jpy1H_ohg".ToCharArray();
-            Array.Reverse(a);
-            return new string(a);
+            return "";
         }
         private const string GITHUB_RAW_BASE = "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/";
         private const string GITHUB_VERSION_URL = "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/version.json";
@@ -281,8 +279,9 @@ namespace AlphaTeamUpdater
                 string json = "";
                 using (WebClient wc = new WebClient())
                 {
-                    wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
-                    wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.1";
+                    string tok = GetGitHubToken();
+                    if (!string.IsNullOrEmpty(tok)) wc.Headers[HttpRequestHeader.Authorization] = "token " + tok;
+                    wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.4";
                     json = wc.DownloadString(GITHUB_VERSION_URL);
                 }
 
@@ -295,8 +294,9 @@ namespace AlphaTeamUpdater
                 {
                     using (WebClient wc = new WebClient())
                     {
-                        wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
-                        wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.1";
+                        string tok = GetGitHubToken();
+                        if (!string.IsNullOrEmpty(tok)) wc.Headers[HttpRequestHeader.Authorization] = "token " + tok;
+                        wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.4";
                         wc.DownloadFile(GITHUB_RAW_BASE + "AlphaLauncher.exe", launcherNew);
                     }
 
@@ -333,7 +333,8 @@ namespace AlphaTeamUpdater
                     string tempConf = Path.Combine(appDir, "server.conf.tmp");
                     using (WebClient wc = new WebClient())
                     {
-                        wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
+                        string tok = GetGitHubToken();
+                        if (!string.IsNullOrEmpty(tok)) wc.Headers[HttpRequestHeader.Authorization] = "token " + tok;
                         wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.4";
                         wc.DownloadFile(GITHUB_RAW_BASE + "server.conf", tempConf);
                     }
@@ -353,8 +354,9 @@ namespace AlphaTeamUpdater
                     string tempCert = Path.Combine(appDir, "server.cert.tmp");
                     using (WebClient wc = new WebClient())
                     {
-                        wc.Headers[HttpRequestHeader.Authorization] = "token " + GetGitHubToken();
-                        wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.1";
+                        string tok = GetGitHubToken();
+                        if (!string.IsNullOrEmpty(tok)) wc.Headers[HttpRequestHeader.Authorization] = "token " + tok;
+                        wc.Headers[HttpRequestHeader.UserAgent] = "AlphaTeamUpdater/1.4";
                         wc.DownloadFile(GITHUB_RAW_BASE + "server.cert", tempCert);
                     }
                     if (File.Exists(tempCert) && new FileInfo(tempCert).Length > 100)
