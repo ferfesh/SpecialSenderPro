@@ -1,19 +1,19 @@
 {
-  "version": "1.4.0",
-  "updatedAt": "2026-11-21T08:37:31.178Z",
+  "version": "1.4.1",
+  "updatedAt": "2026-11-21T08:41:00.801Z",
   "description": "Alpha Team Sender Pro Client & Tools Manifest - Synced with Official Vendor",
   "installer": {
-    "version": "1.4.0",
+    "version": "1.4.1",
     "fileName": "SenderPro-SmartInstaller.exe",
     "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/SenderPro-SmartInstaller.exe"
   },
   "launcher": {
-    "version": "1.4.0",
+    "version": "1.4.1",
     "fileName": "AlphaLauncher.exe",
     "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/AlphaLauncher.exe"
   },
   "updater": {
-    "version": "1.4.0",
+    "version": "1.4.1",
     "fileName": "AlphaUpdater.exe",
     "downloadUrl": "https://raw.githubusercontent.com/ferfesh/SpecialSenderPro/main/AlphaUpdater.exe"
   },
