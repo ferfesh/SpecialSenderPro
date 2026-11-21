@@ -8,8 +8,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using Microsoft.Win32;
 
-[assembly: AssemblyVersion("1.4.2.0")]
-[assembly: AssemblyFileVersion("1.4.2.0")]
+[assembly: AssemblyVersion("1.4.3.0")]
+[assembly: AssemblyFileVersion("1.4.3.0")]
 [assembly: AssemblyTitle("Alpha Team Updater")]
 [assembly: AssemblyProduct("Alpha Team Suite")]
 
