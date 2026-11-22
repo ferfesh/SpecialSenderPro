@@ -8,8 +8,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using Microsoft.Win32;
 
-[assembly: AssemblyVersion("1.4.8.0")]
-[assembly: AssemblyFileVersion("1.4.8.0")]
+[assembly: AssemblyVersion("1.4.9.0")]
+[assembly: AssemblyFileVersion("1.4.9.0")]
 [assembly: AssemblyTitle("Alpha Team Updater")]
 [assembly: AssemblyProduct("Alpha Team Suite")]
 
@@ -253,11 +253,21 @@ namespace AlphaTeamUpdater
                 if (File.Exists(newLauncherPath))
                 {
                     string backupPath = Path.Combine(appDir, "AlphaLauncher.bak");
-                    if (File.Exists(backupPath)) try { File.Delete(backupPath); } catch { }
-                    if (File.Exists(launcherPath)) try { File.Move(launcherPath, backupPath); } catch { }
-
-                    File.Move(newLauncherPath, launcherPath);
-                    Log("AlphaLauncher.exe updated successfully! Relaunching...");
+                    for (int retry = 0; retry < 10; retry++)
+                    {
+                        try
+                        {
+                            if (File.Exists(backupPath)) try { File.Delete(backupPath); } catch { }
+                            if (File.Exists(launcherPath)) File.Move(launcherPath, backupPath);
+                            File.Move(newLauncherPath, launcherPath);
+                            Log("AlphaLauncher.exe updated successfully! Relaunching...");
+                            break;
+                        }
+                        catch
+                        {
+                            System.Threading.Thread.Sleep(500);
+                        }
+                    }
                 }
 
                 if (File.Exists(launcherPath))
